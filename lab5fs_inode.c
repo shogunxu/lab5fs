@@ -18,11 +18,11 @@ struct inode_operations lab5fs_inode_ops = {
 
 /* file operations go here*/
 struct file_operations lab5fs_file_ops = {
-	llseek:generic_file_llseek,
-	read:  generic_file_read,
-	write: generic_file_write,
-	mmap:  generic_file_mmap,
-	open:  generic_file_open,
+	//llseek:generic_file_llseek,
+	//read:  generic_file_read,
+	//write: generic_file_write,
+	//mmap:  generic_file_mmap,
+	//open:  generic_file_open,
 };
 
 /* dir operations go her */
@@ -339,7 +339,7 @@ int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
                    parent_dir->i_ino, child->i_ino, name);
 
         /* sanity checks. */
-        if (namelen > LAB5FS_MAX_FNAME_LEN) {
+        if (namelen > LAB5FS_MAX_FNAME) {
                 err = -EINVAL;
                 goto ret_err;
         }
@@ -405,7 +405,7 @@ static int lab5fs_add_file(struct inode *dir, struct inode *child,
  * Create the file with name specified by VFS dentry, inside the given
  * directory, with the given access permissions.
  */
-int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode)
+int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode,struct nameidata *data)
 {
         struct inode *ino = NULL;
         int err = 0;

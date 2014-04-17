@@ -52,7 +52,7 @@ unsigned long lab5fs_find_block_num(struct inode *ino)
         unsigned long block_num = 0;
         struct lab5fs_inode_table *inode_table;
 
-        if (ino_num < LABFS_ROOT_INODE || ino_num > LAB5FS_MAX_INODE_COUNT) {
+        if (ino_num < LAB5FS_ROOT_INODE || ino_num > LAB5FS_MAX_INODE_COUNT) {
              printk("inode number '%lu' is out of range\n", ino_num);
              return 0;
         }
@@ -91,7 +91,7 @@ int lab5fs_alloc_block_num(struct super_block *sb)
 	
 		/*go to bitmap for first free block*/
 		block_num = find_first_zero_bit((unsigned long*)(block_bitmap->map),LAB5FS_MAX_BLOCK_COUNT);
-		if(block_num >= LAB5FS_MAX_BLOCK_COUNT){
+		if(block_num >= LAB5FS_MAX_BLOCK_COUNT || block_num<=LAB5FS_ROOT_DATA_FIRST_NUM){
 			printk("Error: Could not find free block. Block num=%d.\n",block_num);
 			block_num=0;
             goto ret;
@@ -185,7 +185,7 @@ int lab5fs_alloc_inode_num(struct super_block *sb, int block_num)
 	
 		/*go to bitmap for first free inode*/
 		inode_num = find_first_zero_bit((unsigned long*)(inode_bitmap->map),LAB5FS_MAX_INODE_COUNT);
-		if(inode_num >= LAB5FS_MAX_INODE_COUNT){
+		if(inode_num >= LAB5FS_MAX_INODE_COUNT || inode_num <= LAB5FS_ROOT_INODE){
 			printk("Error: Could not find free inode. Inode num=%d.\n",inode_num);
 			inode_num=0;
             goto ret;

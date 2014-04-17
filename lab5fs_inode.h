@@ -3,7 +3,7 @@
 #define LAB5FS_INODE_H
 
 #include <linux/fs.h>
-
+#include <linux/types.h>
 
 /* custom lab5fs meta-data inside each VFS inode. */
 struct lab5fs_inode_info {
@@ -28,6 +28,7 @@ int lab5fs_inode_read_ino (struct inode *, unsigned long);
 void lab5fs_inode_clear(struct inode *);
 
 struct dentry* lab5fs_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *data);
+int lab5fs_inode_create(struct inode *, struct dentry *,int,struct nameidata *);
 int lab5fs_readdir(struct file *filep, void *dirent, filldir_t fill);
 
 #endif /* LAB5FS_INODE_H */
