@@ -162,22 +162,22 @@ void lab5fs_inode_clear(struct inode *ino){
 void lab5fs_inode_clear_blocks(struct inode *ino){
 	struct super_block *sb = ino->i_sb;
 	struct lab5fs_inode_info *inode_info = LAB5FS_INODE_INFO(ino);
-	int bi_block_num = inode_meta->i_bi_block_num;
+	int bi_block_num = inode_info->i_bi_block_num;
 	struct buffer_head *bibh = NULL;
-	struct lab5fs_inode_data_index *lab5fs_bi = NULL;
-
-	printtk("inode_clear_blocks:: freeing data blocks \n");
+	struct lab5fs_inode_data_index *block_index_table = NULL;
+	int i, block_num;
+	printk("inode_clear_blocks:: freeing data blocks \n");
 	
 	/* read the inode's block index. */
-	if (!(bibh = bread(sb->s_dev, bi_block_num, STAMFS_BLOCK_SIZE))) {
+	if (!(bibh = sb_bread(sb, bi_block_num))) {
 			printk("unable to read block index, block %d.\n",bi_block_num);
 	}
-    block_index_table = (struct stamfs_inode_block_index *)(bibh->b_data));
+	block_index_table = (struct lab5fs_inode_data_index *) bibh->b_data;
 	for (i=0;i < LAB5FS_MAX_BLOCK_INDEX; i++) {
-		block_num = block_index_table->index[i];
-		if (curr_block_num != 0) { //block is in used
+		block_num = le32_to_cpu(block_index_table->blocks[i]);
+		if (block_num != 0) { //block is in used
 			printk("freeing block %u\n",block_num);
-			lab5fs_release_block_num(sb, curr_block_num);
+			lab5fs_release_block_num(sb, block_num);
 		}
 	}
 	ino->i_blocks=0;
@@ -185,11 +185,11 @@ void lab5fs_inode_clear_blocks(struct inode *ino){
 /*release block and inode numbers held by given inode*/
 void lab5fs_inode_free_inode(struct inode *ino){
 	struct super_block *sb = ino->i_sb;
-	struct lab5fs_inode_meta_data *inode_meta = LAB5FS_INODE_INFO(ino);
-	int inode_block_num = lab5fs_inode_to_block_num(ino);
-	int bi_block_num = inode_meta->i_bi_block_num;
+	struct lab5fs_inode_info *inode_info = LAB5FS_INODE_INFO(ino);
+	long inode_block_num = lab5fs_find_block_num(ino);
+	int bi_block_num = inode_info->i_bi_block_num;
 	
-	lab5fs_inode_num(ino, inode_block_num);
+	lab5fs_release_inode_num(sb, ino->i_ino);
 	lab5fs_release_block_num(sb, inode_block_num);
 	lab5fs_release_block_num(sb, bi_block_num);
 
@@ -420,7 +420,7 @@ struct inode *lab5fs_inode_new_inode(struct super_block *sb, int mode)
 
         /* set the inode operations structs. */
 		child_ino->i_op = &lab5fs_inode_ops;
-		child_ino->i_fop = &lab5fs_file_ops;
+		child_ino->i_fop = NULL;
 		child_ino->i_mapping->a_ops = &lab5fs_address_ops;
         
 		//we are not creating directories
