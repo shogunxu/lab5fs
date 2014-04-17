@@ -118,8 +118,8 @@ int lab5fs_getblock(struct inode *dir, int *blocknum) {
 
 	bh = sb_bread(sb, info->i_bi_block_num);
 	data = (struct lab5fs_inode_data_index *)(bh->b_data);
-	*blocknum = (int)(data->blocks[0]);
-	printk("lab5fs:getblock retrieved data block %d from block index %d\n",*blocknum,info->i_bi_block_num);
+	*blocknum = le32_to_cpu(data->blocks[0]);
+	printk("lab5fs:getblock retrieved data block %d from block index %d\n",*blocknum,(int)info->i_bi_block_num);
 out:
 	if(bh)
 		brelse(bh);
@@ -165,7 +165,7 @@ struct dentry* lab5fs_lookup(struct inode *dir, struct dentry *dentry, struct na
 	printk("lab5fs_lookup:: name: %s, len: %d\n", dentry->d_name.name, dentry->d_name.len);
 	err = lab5fs_getfile(dir, dentry->d_name.name, dentry->d_name.len, &ino);
 	if(!err && ino>0) {
-		printk("lab5fs_lookup: inode %d",ino);
+		printk("lab5fs_lookup: inode %d\n",(int)ino);
 		inode = iget(dir->i_sb, ino);
 	}
 		d_add(dentry, inode);
@@ -181,6 +181,9 @@ int lab5fs_readdir(struct file *filep, void *dirent, filldir_t filldir) {
 	struct buffer_head *bh = NULL;
 	struct lab5fs_dir * dir;
 	int block_num=0;
+
+	printk("lab5fs::readdir Reading directory inode=%d file_pos=%d filepath=%s\n",(int)inode->i_ino,(int)filep->f_pos,dentry->d_name.name);
+	
 	/*generate . and .. entries*/
 	if(filep->f_pos == 0) {
 		filldir(dirent, ".", 1, filep->f_pos, inode->i_ino, DT_DIR);
@@ -205,7 +208,8 @@ int lab5fs_readdir(struct file *filep, void *dirent, filldir_t filldir) {
 		goto out;
 	}	
 	dir=(struct lab5fs_dir*)(((char*)(bh->b_data)) + filep->f_pos - 2);
-	while(filep->f_pos-2 < inode->i_size && filep->f_pos < LAB5FS_BLOCK_SIZE + 2){ /*check bounds*/
+	printk("readdir inode file size %d\n",inode->i_size);
+	while(filep->f_pos < LAB5FS_BLOCK_SIZE + 2){ /*check bounds*/
 		if(dir->dir_inode != 0) //skip empty directories indicated by inode==0
 		{
 			if (filldir(dirent, dir->dir_name, dir->dir_name_len, filep->f_pos,le32_to_cpu(dir->dir_inode),DT_UNKNOWN) < 0) {
