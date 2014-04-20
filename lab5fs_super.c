@@ -15,12 +15,14 @@
 void lab5fs_read_inode (struct inode *);
 void lab5fs_clear_inode (struct inode *);
 void lab5fs_put_super (struct super_block *);
+void lab5fs_write_super (struct super_block *sb);
 
 /*Note: still need to actually implement these functions*/
 struct super_operations lab5fs_super_ops ={
 	read_inode: lab5fs_read_inode,
 	clear_inode: lab5fs_clear_inode,
 	put_super: lab5fs_put_super,
+	write_super: lab5fs_write_super,
 };
 
 /* Store custom metadata about filesystem*/
@@ -61,6 +63,201 @@ unsigned long lab5fs_find_block_num(struct inode *ino)
 
         return block_num;
 }
+
+
+
+
+/*
+ * Allocates a free block number.
+ * returns 0 if no free numbers are available.
+ */
+int lab5fs_alloc_block_num(struct super_block *sb)
+{
+        struct lab5fs_sb_info* sb_info = LAB5FS_SB_INFO(sb);
+        struct lab5fs_super_block* lab5fs_sb = sb_info->s_lab5fs_sb;
+	struct lab5fs_bitmap *block_bitmap = sb_info->s_lab5fs_block_bitmap;
+        struct buffer_head *sbh = sb_info->s_sbh;
+        struct buffer_head *bbh = sb_info->s_block_bitmap_bh;
+        int block_num = 0;
+
+        printk("allocating block\n");
+
+        lock_super(sb);
+
+        if (lab5fs_sb->s_free_blocks_count == 0) {
+                printk("Error: no more free blocks.\n");
+                goto ret;
+        }
+	
+		/*go to bitmap for first free block*/
+		block_num = find_first_zero_bit((unsigned long*)(block_bitmap->map),LAB5FS_MAX_BLOCK_COUNT);
+		if(block_num >= LAB5FS_MAX_BLOCK_COUNT){
+			printk("Error: Could not find free block. Block num=%d.\n",block_num);
+			block_num=0;
+            goto ret;
+		}
+		set_bit(block_num, (unsigned long*)(block_bitmap->map));
+        lab5fs_sb->s_free_blocks_count--;
+		mark_buffer_dirty(bbh);
+        mark_buffer_dirty(sbh);
+        sb->s_dirt = 1;
+
+        printk("Allocated block number %d\n", block_num);
+
+ret:
+        unlock_super(sb);
+        return block_num;
+}
+
+
+/*
+ * Frees a previously allocated block number.
+ * returns 0 on success, a negative error code on failure.
+ */
+int lab5fs_release_block_num(struct super_block *sb, int block_num)
+{
+        struct lab5fs_sb_info* sb_info = LAB5FS_SB_INFO(sb);
+        struct lab5fs_super_block* lab5fs_sb = sb_info->s_lab5fs_sb;
+	struct lab5fs_bitmap* block_bitmap = sb_info->s_lab5fs_block_bitmap;
+        struct buffer_head *sbh = sb_info->s_sbh;
+        struct buffer_head *bbh = sb_info->s_block_bitmap_bh;
+
+        printk("freeing block %d\n",block_num);
+
+        /* Prevent freeing any of the low number blocks. */
+        if (block_num <= LAB5FS_ROOT_DATA_FIRST_NUM) {
+                printk("trying to free at or below "
+                       "mandatory block %d\n",
+                       LAB5FS_ROOT_DATA_FIRST_NUM);
+				return -1;
+        }
+		
+		/*check block number is less than max block number*/
+		if(block_num >= LAB5FS_MAX_BLOCK_COUNT){
+			printk("trying to free a block with block number" 
+					"greater than maximum block number %d\n",
+					LAB5FS_MAX_BLOCK_COUNT);
+				return -1;
+		}
+
+        lock_super(sb);
+
+		/*clear bitmap*/
+		clear_bit(block_num, (unsigned long*)(block_bitmap->map));
+		
+		mark_buffer_dirty(bbh);
+        lab5fs_sb->s_free_blocks_count++;
+        mark_buffer_dirty(sbh);
+        sb->s_dirt = 1;
+
+        unlock_super(sb);
+
+        printk("block %d freed\n", block_num);
+
+        return 0;
+}
+
+
+/*
+ * Allocates a free inode number and creates an entry for it in the inode table.
+ * The block_num parameter indicates where the inode number should be mapped to.
+ * returns 0 if no free numbers are available.
+ */
+int lab5fs_alloc_inode_num(struct super_block *sb, int block_num)
+{
+        struct lab5fs_sb_info* sb_info = LAB5FS_SB_INFO(sb);
+        struct lab5fs_super_block* lab5fs_sb = sb_info->s_lab5fs_sb;
+	struct lab5fs_bitmap* inode_bitmap = sb_info->s_lab5fs_inode_bitmap;
+	struct lab5fs_inode_table* inode_table = sb_info->s_lab5fs_inode_table;
+        struct buffer_head *sbh = sb_info->s_sbh;
+        struct buffer_head *ibh = sb_info->s_inode_bitmap_bh;
+        struct buffer_head *ith = sb_info->s_inode_table_bh;
+        int inode_num = 0;
+
+        printk("allocating inode to block %d\n",block_num);
+
+        lock_super(sb);
+
+        if (lab5fs_sb->s_free_inodes_count == 0) {
+                printk("Error: no more free inodes.\n");
+                goto ret;
+        }
+	
+		/*go to bitmap for first free inode*/
+		inode_num = find_first_zero_bit((unsigned long*)(inode_bitmap->map),LAB5FS_MAX_INODE_COUNT);
+		if(inode_num >= LAB5FS_MAX_INODE_COUNT){
+			printk("Error: Could not find free inode. Inode num=%d.\n",inode_num);
+			inode_num=0;
+            goto ret;
+		}
+		set_bit(inode_num, (unsigned long*)(inode_bitmap->map));
+		inode_table->inodes[inode_num]=block_num;
+		
+        lab5fs_sb->s_free_inodes_count--;
+		mark_buffer_dirty(ith);
+		mark_buffer_dirty(ibh);
+        mark_buffer_dirty(sbh);
+        sb->s_dirt = 1;
+
+        printk("Allocated inode number %d\n", inode_num);
+
+ret:
+        unlock_super(sb);
+        return inode_num;
+}
+
+/*
+ * Frees a previously allocated inode number.
+ * returns 0 on success, a negative error code on failure.
+ */
+int lab5fs_release_inode_num(struct super_block *sb, int inode_num)
+{
+        struct lab5fs_sb_info* sb_info = LAB5FS_SB_INFO(sb);
+        struct lab5fs_super_block* lab5fs_sb = sb_info->s_lab5fs_sb;
+	struct lab5fs_bitmap* inode_bitmap = sb_info->s_lab5fs_inode_bitmap;
+	struct lab5fs_inode_table* inode_table = sb_info->s_lab5fs_inode_table;
+        struct buffer_head *sbh = sb_info->s_sbh;
+        struct buffer_head *ibh = sb_info->s_inode_bitmap_bh;
+        struct buffer_head *ith = sb_info->s_inode_table_bh;
+
+
+        printk("freeing inode %d\n",inode_num);
+
+        /* Prevent freeing root inode. */
+        if (inode_num == 0) {
+                printk("trying to free root inode %d\n",
+                       LAB5FS_ROOT_DATA_FIRST_NUM);
+				return -1;
+        }
+		
+		/*check block number is less than max block number*/
+		if(inode_num >= LAB5FS_MAX_INODE_COUNT){
+			printk("trying to free a inode with inode number" 
+					"greater than max inode number %d\n",
+					LAB5FS_MAX_INODE_COUNT);
+				return -1;
+		}
+
+        lock_super(sb);
+
+		/*clear bitmap*/
+		clear_bit(inode_num, (unsigned long*)(inode_bitmap->map));
+		/*for cleanliness set inode table entry to 0*/
+		inode_table->inodes[inode_num]=0;
+		
+		mark_buffer_dirty(ith);
+		mark_buffer_dirty(ibh);
+        lab5fs_sb->s_free_blocks_count++;
+        mark_buffer_dirty(sbh);
+        sb->s_dirt = 1;
+
+        unlock_super(sb);
+
+        printk("inode num %d freed\n", inode_num);
+
+        return 0;
+}
+
 
 
 /* Fill in vfs superblock from lab5fs image*/
@@ -154,4 +351,15 @@ void lab5fs_put_super(struct super_block *sb){
 void lab5fs_clear_inode (struct inode * ino){
 	printk("Releasing inode #%ld from VFS\n",ino->i_ino);
 	lab5fs_inode_clear(ino); /*function defined in lab5fs_inode.c*/
+}
+
+
+void lab5fs_write_super (struct super_block *sb)
+{
+        printk("writing superblock to disk\n");
+
+        /* nothing to do - the super-block is stored in buffers, which */
+        /* get written to disk by the system anyway, and get synced    */
+        /* immediately by the VFS anyway when it needs umount this FS. */
+        sb->s_dirt = 0;
 }

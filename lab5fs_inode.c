@@ -107,6 +107,7 @@ void lab5fs_inode_clear(struct inode *ino){
 	ino->u.generic_ip = NULL;
 }
 
+/*grabs the block number of the first data block from a give data block index*/
 int lab5fs_getblock(struct inode *dir, int *blocknum) {
 	int err = 0;
 	struct super_block *sb = dir->i_sb;
@@ -123,6 +124,7 @@ out:
 	return err;
 }
 
+/*Find the inode number of the file specified by char *name */
 int lab5fs_getfile(struct inode *dir, const char *name, int len, ino_t *ino) {
 	int err = 0;
 	struct super_block *sb = dir->i_sb;
@@ -144,7 +146,7 @@ out:
 	return err;
 }
 
-/* Needed for ls */
+/* Needed for ls. Fill out a VFS inode corresponding to the filename give by the dentry*/
 struct dentry* lab5fs_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *data) {
 	int err = 0;
 	struct inode *inode = NULL;
@@ -182,3 +184,189 @@ out:
 		brelse(bh);
 	return err;
 }
+
+
+/*
+ * Initialize a data index block for specified inode at specified block number
+ *
+ */
+int lab5fs_inode_init_block_index(struct inode *ino, int bi_block_num)
+{
+        int err = 0;
+        struct super_block *sb = ino->i_sb;
+        struct buffer_head *bibh = NULL;
+        struct lab5fs_inode_data_index *lab5fs_data_index = NULL;
+
+        /* read the inode's block index. */
+        if (!(bibh = sb_bread(sb, bi_block_num))) {
+                printk("unable to read inode block index, block %d.\n",
+                       bi_block_num);
+                err = -ENOMEM;
+                goto ret;
+        }
+        lab5fs_data_index = (struct lab5fs_inode_data_index *)(bibh->b_data);
+        memset(lab5fs_data_index->blocks, 0, sizeof(*lab5fs_data_index));
+        mark_buffer_dirty(bibh);
+
+  ret:
+        if (bibh)
+                brelse(bibh);
+        return err;
+}
+
+/*
+ * Allocate a new inode, to be used when creating a new file or directory.
+ */
+struct inode *lab5fs_inode_new_inode(struct super_block *sb, int mode)
+{
+        struct inode *child_ino = NULL;
+        ino_t ino_num = 0;
+        int inode_block_num = 0;
+        int bi_block_num = 0;
+        int err = 0;
+        struct lab5fs_inode_info *inode_info = NULL;
+
+        /* allocate a disk block to contain this inode's data. */
+        inode_block_num = lab5fs_alloc_block_num(sb);
+        if (inode_block_num == 0) {
+                err = -ENOSPC;
+                goto ret_err;
+        }
+
+        /* allocate a disk block to contain the block index of this inode. */
+        bi_block_num = lab5fs_alloc_block_num(sb);
+        if (bi_block_num == 0) {
+                err = -ENOSPC;
+                goto ret_err;
+        }
+
+        /* allocate a free inode number. */
+        ino_num = lab5fs_alloc_inode_num(sb, inode_block_num);
+        if (ino_num == 0) {
+                err = -ENOSPC;
+                goto ret_err;
+        }
+
+        /* allocate a VFS inode object. */
+        child_ino = new_inode(sb);
+        if (!child_ino) {
+                printk("printk: new_inode() failed... inode %lu\n",ino_num);
+                err = -ENOMEM;
+                goto ret_err;
+        }
+
+        /* initialize the inode's block index. */
+        err = lab5fs_inode_init_block_index(child_ino, bi_block_num);
+        if (err)
+                goto ret_err;
+
+        /* init the inode's data. */
+        child_ino->i_ino = ino_num;
+        child_ino->i_mode = mode;
+        child_ino->i_nlink = 1;  /* this inode will be stored in a directory,
+                                  * so there's at least one link to this inode,
+                                  * from that directory. */
+        child_ino->i_size = 0;
+        child_ino->i_blksize = LAB5FS_BLOCK_SIZE;
+        child_ino->i_blkbits = 10;
+        child_ino->i_blocks = 0;
+        child_ino->i_uid = current->fsuid;
+        child_ino->i_gid = current->fsgid;
+        child_ino->i_atime = child_ino->i_mtime = child_ino->i_ctime = CURRENT_TIME;
+
+
+        /* init the inode's lab5fs metadata. */
+        inode_info = kmalloc(sizeof(struct lab5fs_inode_info),
+                                    GFP_KERNEL);
+        if (!inode_info) {
+                printk("not enough memory to allocate inode meta data.\n");
+                goto ret_err;
+        }
+        inode_info->i_block_num = inode_block_num;
+        inode_info->i_bi_block_num = bi_block_num;
+
+        child_ino->u.generic_ip = inode_info;
+
+        /* set the inode operations structs. */
+		child_ino->i_op = &lab5fs_inode_ops;
+		child_ino->i_fop = &lab5fs_file_ops;
+		child_ino->i_mapping->a_ops = &lab5fs_address_ops;
+        
+		//we are not creating directories
+		//child_ino->i_op = &lab5fs_dir_iops;
+		//child_ino->i_fop = &slab5s_dir_fops;
+		//child_ino->i_mapping->a_ops = &lab5fs_aops;
+        
+
+        insert_inode_hash(child_ino);
+        /* make sure the inode gets written to disk by the inodes cache. */
+        mark_inode_dirty(child_ino);
+
+        /* no errors*/
+        err = 0;
+        goto ret;
+
+  ret_err:
+        if (child_ino)
+                iput(child_ino); /* child_ino will be deleted here. */
+        if (ino_num > 0)
+                lab5fs_release_inode_num(sb, ino_num);
+        if (inode_block_num > 0)
+                lab5fs_release_block_num(sb, inode_block_num);
+        if (bi_block_num > 0)
+                lab5fs_release_block_num(sb, bi_block_num);
+  ret:
+        return (err == 0 ? child_ino : NULL);
+}
+
+// /*
+ // * Create the file with name specified by VFS dentry, inside the given
+ // * directory, with the given access permissions.
+ // */
+// int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode)
+// {
+        // struct inode *ino = NULL;
+        // int err = 0;
+
+        // printk("Creating inode at %ld, path=%s, mode=%o\n",
+                             // dir->i_ino, dentry->d_name.name, mode);
+
+        // /* allocate an inode for the child, and add it to the directory. */
+        // ino = lab5fs_inode_new_inode (dir->i_sb, mode);
+        // if (ino!=NULL) {
+                // err = lab5fs_add_file(dir, ino, dentry);
+        // }
+
+        // return err;
+// }
+
+
+// /*
+ // * Unlink the inode given by the dentry pointer from the given directory  
+ // */
+// int lab5fs_inode_unlink(struct inode *dir, struct dentry *dentry)
+// {
+        // int err = 0;
+        // struct inode *child = dentry->d_inode;
+        // const char* child_name = dentry->d_name.name;
+        // int child_name_len = dentry->d_name.len;
+
+        // printk("unlink inode %ld, path=%s\n",
+                             // dir->i_ino, dentry->d_name.name);
+
+        // err = lab5fs_dir_del_link(dir, child, child_name, child_name_len);
+        // if (err != 0)
+                // return err;
+
+        // /* decrease the number of reference counts*/
+        // child->i_ctime = dir->i_ctime;
+        // child->i_nlink--;
+        // mark_inode_dirty(child);
+        
+        // printk("parent_i_nlink=%d, child_i_nlink=%d\n",
+                             // dir->i_nlink, child->i_nlink);
+
+        // err = 0;
+        // return err;
+// }
+
