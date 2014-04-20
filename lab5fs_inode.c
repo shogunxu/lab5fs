@@ -85,7 +85,7 @@ int lab5fs_inode_read_ino(struct inode *ino, unsigned long block_num){
         ino->i_op = &lab5fs_inode_ops;
         /* TODO: switch based on type */
         /* ino->i_fop = &lab5fs_file_ops; */
-        ino->i_fop = &lab5fs_file_ops;
+        ino->i_fop = &lab5fs_dir_ops;
         ino->i_mapping->a_ops = &lab5fs_address_ops;
 
         printk(    "Inode %ld: i_mode=%o, i_nlink=%d, "
