@@ -137,7 +137,7 @@ int write_root_inode(const char* dev_path, int fd)
 	root_inode.i_mode = S_IFDIR | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
 	root_inode.i_uid = 0;
 	root_inode.i_gid = 0;
-	root_inode.i_size = LAB5FS_BLOCK_SIZE;
+	root_inode.i_size = 0;
 	root_inode.i_atime = 0;
 	root_inode.i_mtime = 0;
 	root_inode.i_ctime = 0;

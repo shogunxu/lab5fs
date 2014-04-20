@@ -169,7 +169,9 @@ int lab5fs_readdir(struct file *filep, void *dirent, filldir_t filldir) {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = inode->i_sb;
 	struct buffer_head *bh = NULL;
-
+	struct lab5fs_dir * dir;
+	int block_num=0, offset=0;
+	/*generate . and .. entries*/
 	if(filep->f_pos == 0) {
 		filldir(dirent, ".", 1, filep->f_pos, inode->i_ino, DT_DIR);
 		filep->f_pos++;
@@ -180,6 +182,31 @@ int lab5fs_readdir(struct file *filep, void *dirent, filldir_t filldir) {
 		filep->f_pos++;
 	}
 
+	/*look through lab5fs_dir structures in inode data block*/
+	err = lab5fs_getblock(inode, &block_num);
+	if(err){
+		printk("lab5fs readdir could not find data block=%d\n",block_num);
+		goto out;
+	}
+	bh = sb_bread(dir->i_sb, block);
+	if(!bh){
+		printk("error reading directory from disk. blok=%d\n",block"_num);
+		err=-EIO;
+		goto out;
+	}	
+	dir=(struct lab5fs_dir*)(((char*)(bh->b_data)) + filp->f_pos - 2);
+	while(filep->f_pos-2 < inode->i_size && filp->f_pos < LAB5FS_BLOCK_SIZE + 2){ /*check bounds*/
+		if(dir->d_inode != 0) //skip empty directories indicated by inode==0
+		{
+			if (filldir(dirent, dir->name, size, f->f_pos,le32_to_cpu(dir->ino),DT_UNKNOWN) < 0) {
+				 goto out;
+			}
+			printk("lab5fs readdir adding %s at postion inode=%d",dir->name,le32_to_cpu(dir->ino));
+		}
+		 /* skip to the next entry. */
+		filp->f_pos += sizeof(struct lab5fs_dir);
+		dir_rec++;
+	}
 out:
 	if(bh)
 		brelse(bh);
@@ -331,7 +358,7 @@ int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
         int err = 0;
         struct super_block *sb = parent_dir->i_sb;
         struct buffer_head *data_bh = NULL;
-        struct lab5fs_dir *last_dir_rec = NULL;
+        struct lab5fs_dir *dir_rec = NULL;
         int data_block_num = 0;
 
 
@@ -356,12 +383,29 @@ int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
                 goto ret;
         }
 
-        /* TODO - insert new directory structure into buffer head*/
-        last_dir_rec = (struct lab5fs_dir *)((char*)(data_bh->b_data));
-       
+        /*insert new directory structure into inode data buffer head*/
+        dir_rec = (struct lab5fs_dir *)((char*)(data_bh->b_data));
+		while((char*) dir_rec < (char*)(data_bh->b_data) + LAB5FS_BLOCK_SIZE){
+			if( dir_rec->dr_ino == 0)
+                break; /* empty entry found. */
+			dir_rec++;
+		}
+		
+        /* if no free entry found... */
+        if (((char*)dir_rec) >= ((char*)data_bh->b_data) + LAB5FS_BLOCK_SIZE) {
+                err = -ENOSPC;
+                goto ret_err;
+        }
+		
+		/* populate the directory entry. */
+        dir_rec->dr_ino = cpu_to_le32(child->i_ino);
+        dir_rec->dr_name_len = namelen;
+        memcpy(last_dir_rec->dr_name, name, namelen);
+
 	   
         mark_buffer_dirty(data_bh);
-
+		buffer_insert_inode_data_queue(data_bh, parent_dir);
+		parent_dir->i_size += sizeof(dir_rec);
         parent_dir->i_mtime = parent_dir->i_ctime = CURRENT_TIME;
         mark_inode_dirty(parent_dir);
 
@@ -385,9 +429,9 @@ int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
 static int lab5fs_add_file(struct inode *dir, struct inode *child,
                            struct dentry *child_dentry)
 {
-        int err = lab5fs_dir_add_link(dir, child,
-                                      child_dentry->d_name.name,
-                                      child_dentry->d_name.len);
+        int err = lab5fs_dir_add_link(dir, child,  /*add directory structure to on-disk*/
+			  child_dentry->d_name.name,
+			  child_dentry->d_name.len);
         if (!err) {
                 d_instantiate(child_dentry, child);
                 return 0;
