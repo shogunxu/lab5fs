@@ -116,7 +116,7 @@ int write_inode_table(const char* dev_path,int fd)
 	memset(&table, 0, sizeof(table));
 
 	/*point inode #0 to the root inode block*/
-	table.inodes[0]=LAB5FS_ROOT_INODE_NUM;
+	table.inodes[LAB5FS_ROOT_INODE]=LAB5FS_ROOT_INODE_NUM;
 	/*write to inode table block (block 3)*/
 	rc = write_block(dev_path, fd, "inode table",
 			LAB5FS_INODE_TABLE_NUM,

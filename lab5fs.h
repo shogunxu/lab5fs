@@ -10,6 +10,8 @@
 #define LAB5FS_ROOT_INODE_NUM 4
 #define LAB5FS_ROOT_DATA_INDEX_NUM 5
 #define LAB5FS_ROOT_DATA_FIRST_NUM 6
+//set root inode number to 1. Reserve inode number 0 for null
+#define LAA5FS_ROOT_INODE 1
 
 #define LAB5FS_BLOCK_SIZE 1024
 #define LAB5FS_BITS	10

@@ -13,6 +13,7 @@
 /* inode operations go here*/
 struct inode_operations lab5fs_inode_ops = {
 	lookup: lab5fs_lookup,
+	create: lab5fs_inode_create,
 };
 
 /* file operations go here*/
@@ -319,26 +320,107 @@ struct inode *lab5fs_inode_new_inode(struct super_block *sb, int mode)
         return (err == 0 ? child_ino : NULL);
 }
 
-// /*
- // * Create the file with name specified by VFS dentry, inside the given
- // * directory, with the given access permissions.
- // */
-// int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode)
-// {
-        // struct inode *ino = NULL;
-        // int err = 0;
+/*
+ * Given a directory's inode and a child inode, write a directory struct to
+ * the inode's on disk data
+ * @return 0 on success, a negative error code on failure.
+ */
+int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
+                        const char *name, int namelen)
+{
+        int err = 0;
+        struct super_block *sb = parent_dir->i_sb;
+        struct buffer_head *data_bh = NULL;
+        struct lab5fs_dir *last_dir_rec = NULL;
+        int data_block_num = 0;
 
-        // printk("Creating inode at %ld, path=%s, mode=%o\n",
-                             // dir->i_ino, dentry->d_name.name, mode);
 
-        // /* allocate an inode for the child, and add it to the directory. */
-        // ino = lab5fs_inode_new_inode (dir->i_sb, mode);
-        // if (ino!=NULL) {
-                // err = lab5fs_add_file(dir, ino, dentry);
-        // }
+		printk("Adding link, inode %lu -> inode %lu, name=%s\n",
+                   parent_dir->i_ino, child->i_ino, name);
 
-        // return err;
-// }
+        /* sanity checks. */
+        if (namelen > LAB5FS_MAX_FNAME_LEN) {
+                err = -EINVAL;
+                goto ret_err;
+        }
+
+        err = lab5fs_getblock(parent_dir, &data_block_num);
+        if (err)
+                goto ret_err;
+
+        /* read in the data block of the parent directory. */
+        printk("Reading directory data in block %d\n", data_block_num);
+        if (!(data_bh = sb_bread(sb, data_block_num))) {
+                printk("unable to read dir data block.\n");
+                err = -EIO;
+                goto ret;
+        }
+
+        /* TODO - insert new directory structure into buffer head*/
+        last_dir_rec = (struct lab5fs_dir *)((char*)(data_bh->b_data));
+       
+	   
+        mark_buffer_dirty(data_bh);
+
+        parent_dir->i_mtime = parent_dir->i_ctime = CURRENT_TIME;
+        mark_inode_dirty(parent_dir);
+
+        /* all went well... */
+        err = 0;
+        goto ret;
+
+  ret_err:
+        /* fallthrough */
+  ret:
+        if (data_bh)
+                brelse(data_bh);
+        return err;
+}
+
+
+/*
+ * Add the given file to the given directory, and instantiate the child in
+ * the dcache.
+ */
+static int lab5fs_add_file(struct inode *dir, struct inode *child,
+                           struct dentry *child_dentry)
+{
+        int err = lab5fs_dir_add_link(dir, child,
+                                      child_dentry->d_name.name,
+                                      child_dentry->d_name.len);
+        if (!err) {
+                d_instantiate(child_dentry, child);
+                return 0;
+        }
+
+        /* on error: */
+        child->i_nlink--;
+        mark_inode_dirty(child);
+        iput(child);
+
+        return err;
+}
+
+/*
+ * Create the file with name specified by VFS dentry, inside the given
+ * directory, with the given access permissions.
+ */
+int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode)
+{
+        struct inode *ino = NULL;
+        int err = 0;
+
+        printk("Creating inode at %ld, path=%s, mode=%o\n",
+                             dir->i_ino, dentry->d_name.name, mode);
+
+        /* allocate an inode for the child, and add it to the directory. */
+        ino = lab5fs_inode_new_inode (dir->i_sb, mode);
+        if (ino!=NULL) {
+                err = lab5fs_add_file(dir, ino, dentry);
+        }
+
+        return err;
+}
 
 
 // /*
