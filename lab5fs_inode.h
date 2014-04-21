@@ -29,6 +29,7 @@ void lab5fs_inode_clear(struct inode *);
 
 struct dentry* lab5fs_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *data);
 int lab5fs_inode_create(struct inode *, struct dentry *,int,struct nameidata *);
+int lab5fs_inode_unlink(struct inode *dir, struct dentry *dentry);
 int lab5fs_readdir(struct file *filep, void *dirent, filldir_t fill);
 
 #endif /* LAB5FS_INODE_H */
