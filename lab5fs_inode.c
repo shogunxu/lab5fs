@@ -46,7 +46,7 @@ int lab5fs_inode_read_ino(struct inode *ino, unsigned long block_num){
         struct lab5fs_inode_info *inode_meta = NULL;
 
 
-        printk("Reading inode %ld\n", ino->i_ino);
+        printk("lab5fs_inode_read_ino:: Reading inode %ld\n", ino->i_ino);
 
         /* read the inode's block from disk. */
         if (!(ibh = sb_bread(sb,block_num))) {
@@ -102,6 +102,55 @@ ret_err:
         return err;
 }
 
+
+/*
+ * Update the on-disk copy of the given inode, based given VFS inode struct.
+ * @return 0 on success, a negative error code on failure.
+ */
+int lab5fs_inode_write_ino (struct inode *ino)
+{
+        int err = 0;
+        struct super_block *sb = ino->i_sb;
+        int ino_num = le32_to_cpu(ino->i_ino);
+        struct lab5fs_inode_info *inode_info = LAB5FS_INODE_INFO(ino);
+        int inode_block_num = inode_info->i_block_num;
+        struct buffer_head *ibh = NULL;
+        struct lab5fs_inode *lab5fs_inode = NULL;
+
+        printk("lab5fs_inode_write_ino:: writing inode %d\n", ino_num);
+
+        /* load the inode's block. */
+        if (!(ibh = sb_bread(sb, inode_block_num))) {
+                printk("unable to read block %d.\n", inode_block_num);
+                err = -EIO;
+                goto ret;
+        }
+
+        lab5fs_inode = (struct lab5fs_inode*)(ibh->b_data);
+
+        /* copy data from the VFS's inode to the on-disk inode. */
+        lab5fs_inode->i_mode = cpu_to_le16(ino->i_mode);
+        lab5fs_inode->i_link_count = cpu_to_le16(ino->i_nlink);
+        lab5fs_inode->i_uid = cpu_to_le32(ino->i_uid);
+        lab5fs_inode->i_gid = cpu_to_le32(ino->i_gid);
+        lab5fs_inode->i_atime = cpu_to_le32(ino->i_atime.tv_sec);
+        lab5fs_inode->i_mtime = cpu_to_le32(ino->i_mtime.tv_sec);
+        lab5fs_inode->i_ctime = cpu_to_le32(ino->i_ctime.tv_sec);
+        lab5fs_inode->i_num_blocks = cpu_to_le32(ino->i_blocks);
+        lab5fs_inode->i_size = cpu_to_le32(ino->i_size);
+		/*technically these two below don't matter*/
+        lab5fs_inode->i_data_index_block_num = cpu_to_le32(inode_info->i_bi_block_num);
+		lab5fs_inode->i_block_num = cpu_to_le32(inode_block_num);
+		
+        mark_buffer_dirty(ibh);
+
+
+  ret:
+        if (ibh)
+                brelse(ibh);
+        return err;
+}
+
 /*Free memory used by VFS inode object*/
 void lab5fs_inode_clear(struct inode *ino){
 	struct lab5fs_inode_info *inode_info = LAB5FS_INODE_INFO(ino);
@@ -109,6 +158,14 @@ void lab5fs_inode_clear(struct inode *ino){
 	ino->u.generic_ip = NULL;
 }
 
+/*Clear out data and data index blocks of given inode*/
+void lab5fs_inode_clear_blocks(struct inode *ino){
+
+
+}
+void lab5fs_inode_free_inode(struct inode *ino){
+
+}
 /*grabs the block number of the first data block from a give data block index*/
 int lab5fs_getblock(struct inode *dir, int *blocknum) {
 	int err = 0;
@@ -143,9 +200,11 @@ int lab5fs_getfile(struct inode *dir, const char *name, int len, ino_t *ino) {
 		drec = (struct lab5fs_dir*)bh->b_data;
 		while((char *)drec < (char *)(bh->b_data)+LAB5FS_BLOCK_SIZE){
 			if(drec->dir_inode!=0){ /*empty record*/
-				if(memcmp(drec->dir_name, name, len)==0){
-					*ino = drec->dir_inode;
-				}
+				if(drec->dir_name_len==len){
+					if(memcmp(drec->dir_name, name, len)==0){
+						*ino = drec->dir_inode;
+					}
+				}	
 			}
 			drec++;
 		}

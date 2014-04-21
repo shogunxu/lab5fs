@@ -16,10 +16,12 @@ void lab5fs_read_inode (struct inode *);
 void lab5fs_clear_inode (struct inode *);
 void lab5fs_put_super (struct super_block *);
 void lab5fs_write_super (struct super_block *sb);
+void lab5fs_write_inode(struct inode *ino, int sync);
 
 /*Note: still need to actually implement these functions*/
 struct super_operations lab5fs_super_ops ={
 	read_inode: lab5fs_read_inode,
+	write_inode: lab5fs_write_inode,
 	clear_inode: lab5fs_clear_inode,
 	put_super: lab5fs_put_super,
 	write_super: lab5fs_write_super,
@@ -346,6 +348,34 @@ void lab5fs_put_super(struct super_block *sb){
 	sb->s_fs_info = NULL;
 }
 
+/*Write Inode to on-disk*/
+void lab5fs_write_inode(struct inode *ino,int sync)
+{
+        printk("writing inode %ld to disk\n", ino->i_ino);
+        lab5fs_inode_write_ino (ino);
+}
+
+/*Delete inode from VFS and disk*/
+void stamfs_delete_inode (struct inode *ino)
+{
+        printk("deleting inode %ld\n", ino->i_ino);
+
+        /* delete the inode from the file-system - free its blocks,
+         * then mark it as free. */
+
+        /* free data blocks of this inode. */
+        ino->i_size = 0;
+        if (ino->i_blocks) { /*file contains data inside*/
+                printk("clearing data blocks, #blocks = %ld\n", ino->i_blocks);
+                lab5fs_inode_clear_blocks(ino);
+        }
+
+        /* free the block index and the inode's block numbers. */
+        lab5fs_inode_free_inode(ino);
+
+  
+        clear_inode(ino);
+}
 
 /*Release an inode and clear memory used by inode*/
 void lab5fs_clear_inode (struct inode * ino){
@@ -354,12 +384,9 @@ void lab5fs_clear_inode (struct inode * ino){
 }
 
 
+/* nothing to do - the super-block is stored in buffers, which already get written to disk*/
 void lab5fs_write_super (struct super_block *sb)
 {
         printk("writing superblock to disk\n");
-
-        /* nothing to do - the super-block is stored in buffers, which */
-        /* get written to disk by the system anyway, and get synced    */
-        /* immediately by the VFS anyway when it needs umount this FS. */
         sb->s_dirt = 0;
 }
