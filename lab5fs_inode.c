@@ -14,6 +14,7 @@
 struct inode_operations lab5fs_inode_ops = {
 	lookup: lab5fs_lookup,
 	create: lab5fs_inode_create,
+	unlink: lab5fs_inode_unlink,
 };
 
 /* file operations go here*/
@@ -120,7 +121,7 @@ int lab5fs_getblock(struct inode *dir, int *blocknum) {
 	data = (struct lab5fs_inode_data_index *)(bh->b_data);
 	*blocknum = le32_to_cpu(data->blocks[0]);
 	printk("lab5fs:getblock retrieved data block %d from block index %d\n",*blocknum,(int)info->i_bi_block_num);
-out:
+
 	if(bh)
 		brelse(bh);
 	return err;
@@ -150,7 +151,7 @@ int lab5fs_getfile(struct inode *dir, const char *name, int len, ino_t *ino) {
 		}
 	}
 
-out:
+
 	if(bh)
 		brelse(bh);
 	return err;
@@ -208,7 +209,7 @@ int lab5fs_readdir(struct file *filep, void *dirent, filldir_t filldir) {
 		goto out;
 	}	
 	dir=(struct lab5fs_dir*)(((char*)(bh->b_data)) + filep->f_pos - 2);
-	printk("readdir inode file size %d\n",inode->i_size);
+	printk("readdir inode file size %llu\n",inode->i_size);
 	while(filep->f_pos < LAB5FS_BLOCK_SIZE + 2){ /*check bounds*/
 		if(dir->dir_inode != 0) //skip empty directories indicated by inode==0
 		{
@@ -447,8 +448,7 @@ int lab5fs_dir_del_link(struct inode *parent_dir, struct inode *child,
         int err = 0;
         struct super_block *sb = parent_dir->i_sb;
         struct buffer_head *data_bh = NULL;
-        struct lab5fs_dir_rec *dir_rec = NULL;
-        struct lab5fs_dir_rec *next_dir_rec = NULL;
+        struct lab5fs_dir *dir_rec = NULL;
         int data_block_num = 0;
         int found_child = 0;
 
@@ -470,17 +470,17 @@ int lab5fs_dir_del_link(struct inode *parent_dir, struct inode *child,
         }
 
         /* find the child's entry in the parent directory. */
-        dir_rec = (struct stamfs_dir_rec *)((char*)(data_bh->b_data));
-        while (((char*)dir_rec) < ((char*)data_bh->b_data) + STAMFS_BLOCK_SIZE) {
-                if (dir_rec->dr_name_len == namelen) {
+        dir_rec = (struct lab5fs_dir *) data_bh->b_data;
+        while (((char*)dir_rec) < ((char*)data_bh->b_data) + LAB5FS_BLOCK_SIZE) {
+                if (le32_to_cpu(dir_rec->dir_name_len) == namelen) {
                        
-					if (memcmp(dir_rec->dr_name, name, namelen) != 0) {
-						/* we have a match. */
-						found_child = 1;
-						break;
-					}
-				}
-				dir_rec++;
+			if (memcmp(dir_rec->dir_name, name, namelen) == 0) {
+				/* we have a match. */
+				found_child = 1;
+				break;
+			}
+		}
+		dir_rec++;
         }
 
         if (!found_child) {
@@ -489,11 +489,11 @@ int lab5fs_dir_del_link(struct inode *parent_dir, struct inode *child,
         }
 
         /* mark this entry as free*/
-        dir_rec->dr_ino = cpu_to_le32(0);
+        dir_rec->dir_inode = cpu_to_le32(0);
 
         /* clear up the fields, just for safety. */
-        dir_rec->dr_name_len = 0;
-        dir_rec->dr_name[0] = '\0';
+        dir_rec->dir_name_len = 0;
+        dir_rec->dir_name[0] = '\0';
         mark_buffer_dirty(data_bh);
 
         /* all went well... */
