@@ -437,6 +437,78 @@ int lab5fs_dir_add_link(struct inode *parent_dir, struct inode *child,
 
 
 /*
+ * Given a directory's inode and a child inode, remove this child inode from
+ * the directory's list-of-entries.
+ * @return 0 on success, a negative error code on failure.
+ */
+int lab5fs_dir_del_link(struct inode *parent_dir, struct inode *child,
+                        const char *name, int namelen)
+{
+        int err = 0;
+        struct super_block *sb = parent_dir->i_sb;
+        struct buffer_head *data_bh = NULL;
+        struct lab5fs_dir_rec *dir_rec = NULL;
+        struct lab5fs_dir_rec *next_dir_rec = NULL;
+        int data_block_num = 0;
+        int found_child = 0;
+
+        /* TODO - handle directories with more then one data block... */
+
+        printk("lab5fs Removing link, inode %lu -/-> inode %lu, name=%s\n",
+                   parent_dir->i_ino, child->i_ino, name);
+
+        err = lab5fs_getblock(parent_dir, &data_block_num);
+        if (err)
+                goto ret_err;
+
+        /* read in the data block of the parent directory. */
+        printk("lab5fs: dir data in block %d\n", data_block_num);
+        if (!(data_bh = sb_bread(sb, data_block_num))) {
+                printk("unable to read dir data block.\n");
+                err = -EIO;
+                goto ret_err;
+        }
+
+        /* find the child's entry in the parent directory. */
+        dir_rec = (struct stamfs_dir_rec *)((char*)(data_bh->b_data));
+        while (((char*)dir_rec) < ((char*)data_bh->b_data) + STAMFS_BLOCK_SIZE) {
+                if (dir_rec->dr_name_len == namelen) {
+                       
+					if (memcmp(dir_rec->dr_name, name, namelen) != 0) {
+						/* we have a match. */
+						found_child = 1;
+						break;
+					}
+				}
+				dir_rec++;
+        }
+
+        if (!found_child) {
+                err = -ENOENT;
+                goto ret_err;
+        }
+
+        /* mark this entry as free*/
+        dir_rec->dr_ino = cpu_to_le32(0);
+
+        /* clear up the fields, just for safety. */
+        dir_rec->dr_name_len = 0;
+        dir_rec->dr_name[0] = '\0';
+        mark_buffer_dirty(data_bh);
+
+        /* all went well... */
+        err = 0;
+        goto ret;
+
+  ret_err:
+        /* fallthrough */
+  ret:
+        if (data_bh)
+                brelse(data_bh);
+        return err;
+}
+
+/*
  * Add the given file to the given directory, and instantiate the child in
  * the dcache.
  */
@@ -481,32 +553,32 @@ int lab5fs_inode_create(struct inode *dir, struct dentry *dentry, int mode,struc
 }
 
 
-// /*
- // * Unlink the inode given by the dentry pointer from the given directory  
- // */
-// int lab5fs_inode_unlink(struct inode *dir, struct dentry *dentry)
-// {
-        // int err = 0;
-        // struct inode *child = dentry->d_inode;
-        // const char* child_name = dentry->d_name.name;
-        // int child_name_len = dentry->d_name.len;
+/*
+ * Unlink the inode given by the dentry pointer from the given directory  
+ */
+int lab5fs_inode_unlink(struct inode *dir, struct dentry *dentry)
+{
+        int err = 0;
+        struct inode *child = dentry->d_inode;
+        const char* child_name = dentry->d_name.name;
+        int child_name_len = dentry->d_name.len;
 
-        // printk("unlink inode %ld, path=%s\n",
-                             // dir->i_ino, dentry->d_name.name);
+        printk("unlink inode %ld, path=%s\n",
+                             dir->i_ino, dentry->d_name.name);
 
-        // err = lab5fs_dir_del_link(dir, child, child_name, child_name_len);
-        // if (err != 0)
-                // return err;
+        err = lab5fs_dir_del_link(dir, child, child_name, child_name_len);
+        if (err != 0)
+                return err;
 
-        // /* decrease the number of reference counts*/
-        // child->i_ctime = dir->i_ctime;
-        // child->i_nlink--;
-        // mark_inode_dirty(child);
+        /* decrease the number of reference counts*/
+        child->i_ctime = dir->i_ctime;
+        child->i_nlink--;
+        mark_inode_dirty(child);
         
-        // printk("parent_i_nlink=%d, child_i_nlink=%d\n",
-                             // dir->i_nlink, child->i_nlink);
+        printk("parent_i_nlink=%d, child_i_nlink=%d\n",
+                             dir->i_nlink, child->i_nlink);
 
-        // err = 0;
-        // return err;
-// }
+        err = 0;
+        return err;
+}
 

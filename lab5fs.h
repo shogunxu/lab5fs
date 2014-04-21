@@ -49,7 +49,7 @@ struct lab5fs_dir {
     uint32_t dir_inode;
     uint8_t dir_name_len;
     uint8_t dir_file_type;
-    char dir_name[16];
+    char dir_name[LAB5FS_MAX_FNAME];
 };
 
 struct lab5fs_bitmap {
