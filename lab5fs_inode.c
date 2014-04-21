@@ -160,12 +160,41 @@ void lab5fs_inode_clear(struct inode *ino){
 
 /*Clear out data and data index blocks of given inode*/
 void lab5fs_inode_clear_blocks(struct inode *ino){
+	struct super_block *sb = ino->i_sb;
+	struct lab5fs_inode_info *inode_info = LAB5FS_INODE_INFO(ino);
+	int bi_block_num = inode_meta->i_bi_block_num;
+	struct buffer_head *bibh = NULL;
+	struct lab5fs_inode_data_index *lab5fs_bi = NULL;
 
-
+	printtk("inode_clear_blocks:: freeing data blocks \n");
+	
+	/* read the inode's block index. */
+	if (!(bibh = bread(sb->s_dev, bi_block_num, STAMFS_BLOCK_SIZE))) {
+			printk("unable to read block index, block %d.\n",bi_block_num);
+	}
+    block_index_table = (struct stamfs_inode_block_index *)(bibh->b_data));
+	for (i=0;i < LAB5FS_MAX_BLOCK_INDEX; i++) {
+		block_num = block_index_table->index[i];
+		if (curr_block_num != 0) { //block is in used
+			printk("freeing block %u\n",block_num);
+			lab5fs_release_block_num(sb, curr_block_num);
+		}
+	}
+	ino->i_blocks=0;
 }
+/*release block and inode numbers held by given inode*/
 void lab5fs_inode_free_inode(struct inode *ino){
+	struct super_block *sb = ino->i_sb;
+	struct lab5fs_inode_meta_data *inode_meta = LAB5FS_INODE_INFO(ino);
+	int inode_block_num = lab5fs_inode_to_block_num(ino);
+	int bi_block_num = inode_meta->i_bi_block_num;
+	
+	lab5fs_inode_num(ino, inode_block_num);
+	lab5fs_release_block_num(sb, inode_block_num);
+	lab5fs_release_block_num(sb, bi_block_num);
 
 }
+
 /*grabs the block number of the first data block from a give data block index*/
 int lab5fs_getblock(struct inode *dir, int *blocknum) {
 	int err = 0;

@@ -17,12 +17,14 @@ void lab5fs_clear_inode (struct inode *);
 void lab5fs_put_super (struct super_block *);
 void lab5fs_write_super (struct super_block *sb);
 void lab5fs_write_inode(struct inode *ino, int sync);
+void lab5fs_delete_inode (struct inode *ino);
 
 /*Note: still need to actually implement these functions*/
 struct super_operations lab5fs_super_ops ={
 	read_inode: lab5fs_read_inode,
 	write_inode: lab5fs_write_inode,
 	clear_inode: lab5fs_clear_inode,
+	delete_inode: lab5fs_delete_inode,
 	put_super: lab5fs_put_super,
 	write_super: lab5fs_write_super,
 };
@@ -356,7 +358,7 @@ void lab5fs_write_inode(struct inode *ino,int sync)
 }
 
 /*Delete inode from VFS and disk*/
-void stamfs_delete_inode (struct inode *ino)
+void lab5fs_delete_inode (struct inode *ino)
 {
         printk("deleting inode %ld\n", ino->i_ino);
 

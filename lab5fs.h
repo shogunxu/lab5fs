@@ -19,6 +19,7 @@
 #define LAB5FS_MAX_INODE_COUNT 1024*8
 #define LAB5FS_MAX_BLOCK_COUNT 1024*8
 #define LAB5FS_MAX_FNAME 16
+#define LAB5FS_MAX_BLOCK_INDEX 256
 
 #include <linux/types.h>
 struct lab5fs_super_block {
@@ -61,7 +62,7 @@ struct lab5fs_inode_table {
 };
 
 struct lab5fs_inode_data_index { /*Data index block. Basically just an array of block numbers*/
-    uint32_t blocks[256];
+    uint32_t blocks[LAB5FS_MAX_BLOCK_INDEX];
 };
 
 
